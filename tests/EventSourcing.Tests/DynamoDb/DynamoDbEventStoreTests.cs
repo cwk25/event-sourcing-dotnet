@@ -26,7 +26,7 @@ public class DynamoDbEventStoreTests : IClassFixture<DynamoDbFixture>
     }
     
     [Fact]
-    public async Task AddAsync_WhenInvoked_ShouldAddItemToDynamoDb()
+    public async Task StartStream_WhenInvoked_ShouldAddItemToDynamoDb()
     {
         var id = Guid.NewGuid();
         var @event = new StubEventOne(
@@ -55,5 +55,11 @@ public class DynamoDbEventStoreTests : IClassFixture<DynamoDbFixture>
             { "event", new AttributeValue { S = nameof(StubEventOne) } },
             { "timestamp", new AttributeValue { S = _dateTimeProvider.UtcNow.ToString("o") } }
         }, options => options.ExcludingMissingMembers());
+    }
+    
+    [Fact]
+    public async Task StartStream_WhenContainsMultipleEvents_ShouldAddItemsInSequenceToDynamoDb()
+    {
+        
     }
 }
