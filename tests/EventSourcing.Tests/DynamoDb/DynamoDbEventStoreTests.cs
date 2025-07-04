@@ -1,4 +1,5 @@
 ﻿using Amazon.DynamoDBv2;
+using Amazon.DynamoDBv2.DataModel;
 using Amazon.DynamoDBv2.Model;
 using EventSourcing.DynamoDb;
 using EventSourcing.Tests.Stubs;
@@ -34,7 +35,7 @@ public class DynamoDbEventStoreTests : IClassFixture<DynamoDbFixture>
             "prop2", 
             new NestedObject{ NestedProperty1 = "nestedValue1", NestedProperty2 = "nestedValue2" });
         
-        await _sut.StartStream<StubEventOne>(id, @event);
+        await _sut.StartStream<StubAggregate>(id, @event);
 
         var getItemRequest = new GetItemRequest
         {
@@ -42,9 +43,10 @@ public class DynamoDbEventStoreTests : IClassFixture<DynamoDbFixture>
             Key = new Dictionary<string, AttributeValue>
             {
                 { "id", new AttributeValue { S = id.ToString() } },
-                { "version", new AttributeValue { N = "1" } }
+                { "version", new AttributeValue{ N = "1" } }
             }
         };
+        
         var result = await _fixture.DDbClient.GetItemAsync(getItemRequest);
         
         result.Item.Should().BeEquivalentTo(new Dictionary<string, AttributeValue>
@@ -60,6 +62,44 @@ public class DynamoDbEventStoreTests : IClassFixture<DynamoDbFixture>
     [Fact]
     public async Task StartStream_WhenContainsMultipleEvents_ShouldAddItemsInSequenceToDynamoDb()
     {
+        var id = Guid.NewGuid();
+        var @event = new StubEventOne(
+            "prop1", 
+            "prop2", 
+            new NestedObject{ NestedProperty1 = "nestedValue1", NestedProperty2 = "nestedValue2" });
+        var event2 = new StubEventTwo("prop2Modified");
         
+        await _sut.StartStream<StubAggregate>(id, @event, event2);
+
+        var queryRequest = new QueryRequest
+        {
+            TableName = _fixture.TableName,
+            KeyConditionExpression = "id = :id",
+            ExpressionAttributeValues = new Dictionary<string, AttributeValue>
+            {
+                { ":id", new AttributeValue { S = id.ToString() } }
+            },
+            ScanIndexForward = false // to get the latest version first
+        };
+        var result = await _fixture.DDbClient.QueryAsync(queryRequest);
+        
+        result.Items.Should().BeEquivalentTo([
+                new Dictionary<string, AttributeValue>
+                {
+                    { "id", new AttributeValue { S = id.ToString() } },
+                    { "version", new AttributeValue { N = "1" } },
+                    { "data", new AttributeValue { S = "{\"customProperty1\":\"prop1\",\"customProperty2\":\"prop2\",\"nestedObject\":{\"nestedProperty1\":\"nestedValue1\",\"nestedProperty2\":\"nestedValue2\"}}" } },
+                    { "event", new AttributeValue { S = nameof(StubEventOne) } },
+                    { "timestamp", new AttributeValue { S = _dateTimeProvider.UtcNow.ToString("o") } }
+                },
+                new Dictionary<string, AttributeValue>
+                {
+                    { "id", new AttributeValue { S = id.ToString() } },
+                    { "version", new AttributeValue { N = "2" } },
+                    { "data", new AttributeValue { S = "{\"customProperty2\":\"prop2Modified\"}" } },
+                    { "event", new AttributeValue { S = nameof(StubEventTwo) } },
+                    { "timestamp", new AttributeValue { S = _dateTimeProvider.UtcNow.ToString("o") } }
+                },
+            ], options => options.ExcludingMissingMembers());
     }
 }
