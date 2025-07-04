@@ -1,4 +1,6 @@
-﻿using Amazon.DynamoDBv2;
+﻿using System.Globalization;
+using System.Text.Json;
+using Amazon.DynamoDBv2;
 using Amazon.DynamoDBv2.DataModel;
 using Amazon.DynamoDBv2.Model;
 using EventSourcing.DynamoDb;
@@ -15,16 +17,14 @@ public class DynamoDbEventStoreTests : IClassFixture<DynamoDbFixture>
     private readonly DynamoDbFixture _fixture;
     private readonly DynamoDbEventStore _sut;
     private readonly StubDateTimeProvider _dateTimeProvider = new ();
-    private readonly IAmazonDynamoDB _dynamoDb;
     private readonly IOptions<DynamoDbConfig> _dbConfigOptions = Substitute.For<IOptions<DynamoDbConfig>>();
     
 
     public DynamoDbEventStoreTests(DynamoDbFixture fixture)
     {
         _fixture = fixture;
-        _dynamoDb = _fixture.DDbClient;
         _dbConfigOptions.Value.Returns(new DynamoDbConfig{ EventTableName = _fixture.TableName });
-        _sut = new DynamoDbEventStore(_dynamoDb, _dbConfigOptions, _dateTimeProvider);
+        _sut = new DynamoDbEventStore(_fixture.DDbClient, _dbConfigOptions, _dateTimeProvider);
     }
     
     [Fact]
@@ -55,7 +55,7 @@ public class DynamoDbEventStoreTests : IClassFixture<DynamoDbFixture>
             { "id", new AttributeValue { S = id.ToString() } },
             { "version", new AttributeValue { N = "1" } },
             { "data", new AttributeValue { S = "{\"customProperty1\":\"prop1\",\"customProperty2\":\"prop2\",\"nestedObject\":{\"nestedProperty1\":\"nestedValue1\",\"nestedProperty2\":\"nestedValue2\"}}" } },
-            { "event", new AttributeValue { S = nameof(StubEventOne) } },
+            { "event", new AttributeValue { S = "EventSourcing.Tests.Stubs.StubEventOne" } },
             { "timestamp", new AttributeValue { S = _dateTimeProvider.UtcNow.ToString("o") } }
         }, options => options.ExcludingMissingMembers());
     }
@@ -90,7 +90,7 @@ public class DynamoDbEventStoreTests : IClassFixture<DynamoDbFixture>
                     { "id", new AttributeValue { S = id.ToString() } },
                     { "version", new AttributeValue { N = "1" } },
                     { "data", new AttributeValue { S = "{\"customProperty1\":\"prop1\",\"customProperty2\":\"prop2\",\"nestedObject\":{\"nestedProperty1\":\"nestedValue1\",\"nestedProperty2\":\"nestedValue2\"}}" } },
-                    { "event", new AttributeValue { S = nameof(StubEventOne) } },
+                    { "event", new AttributeValue { S =  "EventSourcing.Tests.Stubs.StubEventOne" } },
                     { "timestamp", new AttributeValue { S = _dateTimeProvider.UtcNow.ToString("o") } }
                 },
                 new Dictionary<string, AttributeValue>
@@ -98,7 +98,7 @@ public class DynamoDbEventStoreTests : IClassFixture<DynamoDbFixture>
                     { "id", new AttributeValue { S = id.ToString() } },
                     { "version", new AttributeValue { N = "2" } },
                     { "data", new AttributeValue { S = "{\"customProperty2\":\"prop2Modified\"}" } },
-                    { "event", new AttributeValue { S = nameof(StubEventTwo) } },
+                    { "event", new AttributeValue { S = "EventSourcing.Tests.Stubs.StubEventTwo" } },
                     { "timestamp", new AttributeValue { S = _dateTimeProvider.UtcNow.ToString("o") } }
                 },
             ], options => options.ExcludingMissingMembers());
@@ -119,5 +119,43 @@ public class DynamoDbEventStoreTests : IClassFixture<DynamoDbFixture>
         var result = async () => await _sut.StartStream<StubAggregate>(id, @event);
         
         await result.Should().ThrowAsync<ConcurrencyException>();
+    }
+    
+    [Fact]
+    public async Task Fetch_WhenInvoked_ShouldReturnEventStream()
+    {
+        var id = Guid.NewGuid();
+        var events = CreateEvents();
+        
+        await _sut.StartStream<StubAggregate>(id, events);
+
+        var stream = await _sut.Fetch<StubAggregate>(id);
+
+        stream.Should().BeEquivalentTo(
+            new DynamoDbStream<StubAggregate>(
+                _fixture.DDbClient,
+                id,
+                [
+                    new EventItem(id,
+                        1,
+                        "{\"customProperty1\":\"prop1\",\"customProperty2\":\"prop2\",\"nestedObject\":{\"nestedProperty1\":\"nestedValue1\",\"nestedProperty2\":\"nestedValue2\"}}",
+                        "EventSourcing.Tests.Stubs.StubEventOne",
+                        DateTime.Parse(_dateTimeProvider.UtcNow.ToString("o"), null, DateTimeStyles.RoundtripKind)),
+                    new EventItem(id,
+                        2,
+                        "{\"customProperty2\":\"prop2Modified\"}",
+                        "EventSourcing.Tests.Stubs.StubEventTwo",
+                        DateTime.Parse(_dateTimeProvider.UtcNow.ToString("o"), null, DateTimeStyles.RoundtripKind))
+                ],
+                new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase }));
+    }
+    
+    private static object[] CreateEvents()
+    {
+        return new object[]
+        {
+            new StubEventOne("prop1", "prop2", new NestedObject { NestedProperty1 = "nestedValue1", NestedProperty2 = "nestedValue2" }),
+            new StubEventTwo("prop2Modified")
+        };
     }
 }

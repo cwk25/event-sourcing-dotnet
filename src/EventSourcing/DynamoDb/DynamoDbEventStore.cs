@@ -10,7 +10,7 @@ namespace EventSourcing.DynamoDb;
 public class DynamoDbEventStore(IAmazonDynamoDB dynamoDb, IOptions<DynamoDbConfig> dbConfigOptions, IDateTimeProvider dateTimeProvider) : IEventStore
 {
     private readonly DynamoDbConfig _dbConfig = dbConfigOptions.Value;
-    private readonly static JsonSerializerOptions _jsonSerializerOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+    private readonly JsonSerializerOptions _jsonSerializerOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
     
     public async Task StartStream<TAggregate>(Guid id, params object[] events)
     {
@@ -26,7 +26,7 @@ public class DynamoDbEventStore(IAmazonDynamoDB dynamoDb, IOptions<DynamoDbConfi
                     { "id", new AttributeValue { S = id.ToString() } },
                     { "version", new AttributeValue { N = version.ToString() } }, //we can enhance to support initial versioning later
                     { "data", new AttributeValue { S = JsonSerializer.Serialize(events[index], _jsonSerializerOptions) } },
-                    { "event", new AttributeValue { S = events[index].GetType().Name } },
+                    { "event", new AttributeValue { S = events[index].GetType().FullName } },
                     { "timestamp", new AttributeValue { S = dateTimeProvider.UtcNow.ToString("o") } }
                 },
                 ConditionExpression = "attribute_not_exists(#id) AND attribute_not_exists(#version)",
@@ -52,13 +52,33 @@ public class DynamoDbEventStore(IAmazonDynamoDB dynamoDb, IOptions<DynamoDbConfi
         }
     }
 
-    public Task Append(Guid stream, IEnumerable<object> events)
+    public Task Append(Guid stream, params object[] events)
     {
         throw new NotImplementedException();
     }
 
-    public Task FetchLatest<TAggregate>(Guid id)
+    public async Task<IEventStream<TAggregate>> Fetch<TAggregate>(Guid id)
     {
-        throw new NotImplementedException();
+        var queryRequest = new QueryRequest
+        {
+            TableName = _dbConfig.EventTableName,
+            KeyConditionExpression = "id = :id",
+            ExpressionAttributeValues = new Dictionary<string, AttributeValue>
+            {
+                { ":id", new AttributeValue { S = id.ToString() } }
+            },
+            ScanIndexForward = true // to get the latest version first
+        };
+        var result = await dynamoDb.QueryAsync(queryRequest);
+
+        var eventItems = result.Items.Select(x =>
+        
+            new EventItem(Guid.Parse(x["id"].S),
+                long.Parse(x["version"].N),
+                x["data"].S,
+                x["event"].S,
+                DateTime.Parse(x["timestamp"].S, null, System.Globalization.DateTimeStyles.RoundtripKind))
+        );
+        return new DynamoDbStream<TAggregate>(dynamoDb, id, eventItems, _jsonSerializerOptions);
     }
 }

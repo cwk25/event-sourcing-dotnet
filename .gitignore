@@ -54,8 +54,14 @@ TestResult.xml
 nunit-*.xml
 
 # idea
-/.idea/*
+/.idea/.idea.EventSourcing/.idea/.name
+/.idea/.idea.EventSourcing/.idea/aws.xml
+/.idea/.idea.EventSourcing/.idea/encodings.xml
+/.idea/.idea.EventSourcing/.idea/indexLayout.xml
+/.idea/.idea.EventSourcing/.idea/material_theme_project_new.xml
+/.idea/.idea.EventSourcing/.idea/vcs.xml
 
 # .vs
 /.vs/EventSourcing/*
+/.vs/ProjectEvaluation/*
 
