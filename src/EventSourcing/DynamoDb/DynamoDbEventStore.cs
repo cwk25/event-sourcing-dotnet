@@ -2,6 +2,7 @@
 using System.Text.Json;
 using Amazon.DynamoDBv2;
 using Amazon.DynamoDBv2.Model;
+using EventSourcing.Exceptions;
 using Microsoft.Extensions.Options;
 
 namespace EventSourcing.DynamoDb;
@@ -9,7 +10,7 @@ namespace EventSourcing.DynamoDb;
 public class DynamoDbEventStore(IAmazonDynamoDB dynamoDb, IOptions<DynamoDbConfig> dbConfigOptions, IDateTimeProvider dateTimeProvider) : IEventStore
 {
     private readonly DynamoDbConfig _dbConfig = dbConfigOptions.Value;
-    private readonly static JsonSerializerOptions _jsonSerializerOptions = new JsonSerializerOptions{ PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+    private readonly static JsonSerializerOptions _jsonSerializerOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
     
     public async Task StartStream<TAggregate>(Guid id, params object[] events)
     {
@@ -27,12 +28,27 @@ public class DynamoDbEventStore(IAmazonDynamoDB dynamoDb, IOptions<DynamoDbConfi
                     { "data", new AttributeValue { S = JsonSerializer.Serialize(events[index], _jsonSerializerOptions) } },
                     { "event", new AttributeValue { S = events[index].GetType().Name } },
                     { "timestamp", new AttributeValue { S = dateTimeProvider.UtcNow.ToString("o") } }
+                },
+                ConditionExpression = "attribute_not_exists(#id) AND attribute_not_exists(#version)",
+                ExpressionAttributeNames = new Dictionary<string, string>
+                {
+                    { "#id", "id" },
+                    { "#version", "version" }
                 }
             };
-        
-            var response = await dynamoDb.PutItemAsync(putItemRequest);
-
-            version++;
+            try
+            {
+                var response = await dynamoDb.PutItemAsync(putItemRequest);
+                version++;
+            }
+            catch (ConditionalCheckFailedException e)
+            {
+                throw new ConcurrencyException(e.Message);
+            }
+            catch (Exception e)
+            {
+                throw;
+            }
         }
     }
 

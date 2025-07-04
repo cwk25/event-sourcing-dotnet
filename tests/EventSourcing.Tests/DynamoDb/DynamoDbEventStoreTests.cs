@@ -2,6 +2,7 @@
 using Amazon.DynamoDBv2.DataModel;
 using Amazon.DynamoDBv2.Model;
 using EventSourcing.DynamoDb;
+using EventSourcing.Exceptions;
 using EventSourcing.Tests.Stubs;
 using FluentAssertions;
 using Microsoft.Extensions.Options;
@@ -101,5 +102,22 @@ public class DynamoDbEventStoreTests : IClassFixture<DynamoDbFixture>
                     { "timestamp", new AttributeValue { S = _dateTimeProvider.UtcNow.ToString("o") } }
                 },
             ], options => options.ExcludingMissingMembers());
+    }
+    
+    [Fact]
+    public async Task StartStream_WhenItemAlreadyExists_ShouldThrowConcurrencyException()
+    {
+        var id = Guid.NewGuid();
+        var @event = new StubEventOne(
+            "prop1", 
+            "prop2", 
+            new NestedObject{ NestedProperty1 = "nestedValue1", NestedProperty2 = "nestedValue2" });
+
+        await _sut.StartStream<StubAggregate>(id, @event);
+        
+
+        var result = async () => await _sut.StartStream<StubAggregate>(id, @event);
+        
+        await result.Should().ThrowAsync<ConcurrencyException>();
     }
 }
