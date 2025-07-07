@@ -7,7 +7,10 @@ using Microsoft.Extensions.Options;
 
 namespace EventSourcing.DynamoDb;
 
-public class DynamoDbEventStore(IAmazonDynamoDB dynamoDb, IOptions<DynamoDbConfig> dbConfigOptions, IDateTimeProvider dateTimeProvider) : IEventStore
+public class DynamoDbEventStore(
+    IAmazonDynamoDB dynamoDb, 
+    IOptions<DynamoDbConfig> dbConfigOptions, 
+    IDateTimeProvider dateTimeProvider) : IEventStore
 {
     private readonly DynamoDbConfig _dbConfig = dbConfigOptions.Value;
     private readonly JsonSerializerOptions _jsonSerializerOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
@@ -26,7 +29,7 @@ public class DynamoDbEventStore(IAmazonDynamoDB dynamoDb, IOptions<DynamoDbConfi
                     { "id", new AttributeValue { S = id.ToString() } },
                     { "version", new AttributeValue { N = version.ToString() } }, //we can enhance to support initial versioning later
                     { "data", new AttributeValue { S = JsonSerializer.Serialize(events[index], _jsonSerializerOptions) } },
-                    { "event", new AttributeValue { S = events[index].GetType().FullName } },
+                    { "event", new AttributeValue { S = events[index].GetType().AssemblyQualifiedName } },
                     { "timestamp", new AttributeValue { S = dateTimeProvider.UtcNow.ToString("o") } }
                 },
                 ConditionExpression = "attribute_not_exists(#id) AND attribute_not_exists(#version)",
@@ -79,6 +82,6 @@ public class DynamoDbEventStore(IAmazonDynamoDB dynamoDb, IOptions<DynamoDbConfi
                 x["event"].S,
                 DateTime.Parse(x["timestamp"].S, null, System.Globalization.DateTimeStyles.RoundtripKind))
         );
-        return new DynamoDbStream<TAggregate>(dynamoDb, id, eventItems, _jsonSerializerOptions);
+        return new DynamoDbEventStream<TAggregate>(dynamoDb, _jsonSerializerOptions, id, eventItems);
     }
 }

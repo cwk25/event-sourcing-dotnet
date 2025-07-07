@@ -1,7 +1,5 @@
 ﻿using System.Globalization;
 using System.Text.Json;
-using Amazon.DynamoDBv2;
-using Amazon.DynamoDBv2.DataModel;
 using Amazon.DynamoDBv2.Model;
 using EventSourcing.DynamoDb;
 using EventSourcing.Exceptions;
@@ -24,6 +22,7 @@ public class DynamoDbEventStoreTests : IClassFixture<DynamoDbFixture>
     {
         _fixture = fixture;
         _dbConfigOptions.Value.Returns(new DynamoDbConfig{ EventTableName = _fixture.TableName });
+        var eventSerializer = new StubEventSerializer();
         _sut = new DynamoDbEventStore(_fixture.DDbClient, _dbConfigOptions, _dateTimeProvider);
     }
     
@@ -55,7 +54,7 @@ public class DynamoDbEventStoreTests : IClassFixture<DynamoDbFixture>
             { "id", new AttributeValue { S = id.ToString() } },
             { "version", new AttributeValue { N = "1" } },
             { "data", new AttributeValue { S = "{\"customProperty1\":\"prop1\",\"customProperty2\":\"prop2\",\"nestedObject\":{\"nestedProperty1\":\"nestedValue1\",\"nestedProperty2\":\"nestedValue2\"}}" } },
-            { "event", new AttributeValue { S = "EventSourcing.Tests.Stubs.StubEventOne" } },
+            { "event", new AttributeValue { S = "EventSourcing.Tests.Stubs.StubEventOne, EventSourcing.Tests, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null" } },
             { "timestamp", new AttributeValue { S = _dateTimeProvider.UtcNow.ToString("o") } }
         }, options => options.ExcludingMissingMembers());
     }
@@ -90,7 +89,7 @@ public class DynamoDbEventStoreTests : IClassFixture<DynamoDbFixture>
                     { "id", new AttributeValue { S = id.ToString() } },
                     { "version", new AttributeValue { N = "1" } },
                     { "data", new AttributeValue { S = "{\"customProperty1\":\"prop1\",\"customProperty2\":\"prop2\",\"nestedObject\":{\"nestedProperty1\":\"nestedValue1\",\"nestedProperty2\":\"nestedValue2\"}}" } },
-                    { "event", new AttributeValue { S =  "EventSourcing.Tests.Stubs.StubEventOne" } },
+                    { "event", new AttributeValue { S =  "EventSourcing.Tests.Stubs.StubEventOne, EventSourcing.Tests, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null" } },
                     { "timestamp", new AttributeValue { S = _dateTimeProvider.UtcNow.ToString("o") } }
                 },
                 new Dictionary<string, AttributeValue>
@@ -98,7 +97,7 @@ public class DynamoDbEventStoreTests : IClassFixture<DynamoDbFixture>
                     { "id", new AttributeValue { S = id.ToString() } },
                     { "version", new AttributeValue { N = "2" } },
                     { "data", new AttributeValue { S = "{\"customProperty2\":\"prop2Modified\"}" } },
-                    { "event", new AttributeValue { S = "EventSourcing.Tests.Stubs.StubEventTwo" } },
+                    { "event", new AttributeValue { S = "EventSourcing.Tests.Stubs.StubEventTwo, EventSourcing.Tests, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null" } },
                     { "timestamp", new AttributeValue { S = _dateTimeProvider.UtcNow.ToString("o") } }
                 },
             ], options => options.ExcludingMissingMembers());
@@ -132,22 +131,22 @@ public class DynamoDbEventStoreTests : IClassFixture<DynamoDbFixture>
         var stream = await _sut.Fetch<StubAggregate>(id);
 
         stream.Should().BeEquivalentTo(
-            new DynamoDbStream<StubAggregate>(
+            new DynamoDbEventStream<StubAggregate>(
                 _fixture.DDbClient,
+                new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase },
                 id,
                 [
                     new EventItem(id,
                         1,
                         "{\"customProperty1\":\"prop1\",\"customProperty2\":\"prop2\",\"nestedObject\":{\"nestedProperty1\":\"nestedValue1\",\"nestedProperty2\":\"nestedValue2\"}}",
-                        "EventSourcing.Tests.Stubs.StubEventOne",
+                        "EventSourcing.Tests.Stubs.StubEventOne, EventSourcing.Tests, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
                         DateTime.Parse(_dateTimeProvider.UtcNow.ToString("o"), null, DateTimeStyles.RoundtripKind)),
                     new EventItem(id,
                         2,
                         "{\"customProperty2\":\"prop2Modified\"}",
-                        "EventSourcing.Tests.Stubs.StubEventTwo",
+                        "EventSourcing.Tests.Stubs.StubEventTwo, EventSourcing.Tests, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
                         DateTime.Parse(_dateTimeProvider.UtcNow.ToString("o"), null, DateTimeStyles.RoundtripKind))
-                ],
-                new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase }));
+                ]));
     }
     
     private static object[] CreateEvents()
