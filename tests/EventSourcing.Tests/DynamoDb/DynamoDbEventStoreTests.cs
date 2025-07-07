@@ -22,7 +22,6 @@ public class DynamoDbEventStoreTests : IClassFixture<DynamoDbFixture>
     {
         _fixture = fixture;
         _dbConfigOptions.Value.Returns(new DynamoDbConfig{ EventTableName = _fixture.TableName });
-        var eventSerializer = new StubEventSerializer();
         _sut = new DynamoDbEventStore(_fixture.DDbClient, _dbConfigOptions, _dateTimeProvider);
     }
     
